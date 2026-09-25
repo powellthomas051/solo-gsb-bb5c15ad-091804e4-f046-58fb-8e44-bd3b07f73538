@@ -135,6 +135,29 @@ button:disabled { background: #aaa5; cursor: not-allowed; }
 }
 .field-hint.over { color: var(--danger); font-weight: 600; }
 .field-hint.err { color: var(--danger); font-weight: 600; }
+/* 逐行提示可能有多条（如术语对照表逐行错误），保留换行并左对齐 */
+.field-hint.multiline {
+  white-space: pre-line;
+  text-align: left;
+}
+
+/* ========== 双语术语核对 ========== */
+.term-check {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-bottom: 14px;
+}
+.term-summary {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin-bottom: 6px;
+  white-space: pre-line;
+}
+.term-summary.ok { color: #2f6f44; }
+.term-summary.err { color: var(--danger); font-weight: 600; }
+.term-table { margin-bottom: 10px; }
+.term-table td.bad { color: var(--danger); font-weight: 600; }
 
 .compare {
   border-top: 1px solid var(--line);

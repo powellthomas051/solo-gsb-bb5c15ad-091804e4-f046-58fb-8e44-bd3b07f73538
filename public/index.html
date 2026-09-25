@@ -42,6 +42,23 @@
     </div>
 
     <label class="field">
+      <span class="field-label">双语术语对照表（可选，每行「中文术语=英文译名」，空行忽略）</span>
+      <textarea id="glossary" rows="4" placeholder="如：&#10;仰韶文化=Yangshao culture&#10;仰韶村=Yangshao Village&#10;重复中文项、空值或格式错误会逐行提示。"></textarea>
+      <span class="field-hint multiline" id="glossaryHint">未录入术语对照</span>
+    </label>
+
+    <section id="termCheck" class="term-check" hidden>
+      <h2 class="compare-title">双语术语核对 <span class="compare-sub">逐段比较同一术语在中英两侧的出现次数</span></h2>
+      <div id="termSummary" class="term-summary"></div>
+      <table class="fit-table term-table" id="termTable" hidden>
+        <thead>
+          <tr><th>段号</th><th>中文术语</th><th>英文译名</th><th>中文次数</th><th>英文次数</th></tr>
+        </thead>
+        <tbody id="termBody"></tbody>
+      </table>
+    </section>
+
+    <label class="field">
       <span class="field-label">展品介绍链接（可选，https:// 开头，UTF-8 ≤ 100 字节）</span>
       <input id="qrLink" type="text" placeholder="如：https://example.com/item/123 ；填写后展签底部生成二维码">
       <span class="field-hint" id="qrHint">未填写链接，不生成二维码</span>
@@ -149,6 +166,11 @@
           排版先扣除该区域再为标题与正文选最大字号；链接非法或无法编码时报错并禁用打印，留空即恢复原版式。</li>
         <li><strong>修订对照</strong>：填写修订稿（≤300 字）后，按 Unicode 字符求最短增删对齐，
           同代价时固定优先保留原文较早字符；对照区中绿色为新增、红色删除线为已删。</li>
+        <li><strong>双语术语核对</strong>：对照表每行「中文术语=英文译名」（空行忽略；
+          重复中文项、空值或格式错误逐行提示并禁用打印）。开启「中英段落对齐」且中英段数一致后，
+          对当前选定成品（原稿或修订稿）逐段核对：中文术语按最长优先匹配、命中区间不重复计数，
+          英文译名忽略大小写并按完整词组边界计数；任一术语在某段两侧次数不符时，
+          列出段号、术语及两侧次数，并禁用单张与拼版打印，修正后自动恢复。</li>
         <li>原稿与修订稿沿用当前尺寸与英文译文<strong>分别排版</strong>，对照表展示两版字号、中文行数与能否容纳的变化；
           选定成品版本后，预览与打印只显示该版，差异标记不进入打印；所选版排不下时禁用打印并说明超宽或超高。</li>
         <li>打印输出与预览<strong>同换行、同物理尺寸</strong>（毫米）。</li>
@@ -195,6 +217,7 @@
 
 <script src="/js/diff.js"></script>
 <script src="/js/layout.js"></script>
+<script src="/js/terms.js"></script>
 <script src="/js/qrcode.js"></script>
 <script src="/js/app.js"></script>
 </body>

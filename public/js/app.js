@@ -30,6 +30,12 @@
     bodyEn: document.getElementById('bodyEn'),
     paraAlign: document.getElementById('paraAlign'),
     paraAlignHint: document.getElementById('paraAlignHint'),
+    glossary: document.getElementById('glossary'),
+    glossaryHint: document.getElementById('glossaryHint'),
+    termCheck: document.getElementById('termCheck'),
+    termSummary: document.getElementById('termSummary'),
+    termTable: document.getElementById('termTable'),
+    termBody: document.getElementById('termBody'),
     qrLink: document.getElementById('qrLink'),
     qrHint: document.getElementById('qrHint'),
     bodyRev: document.getElementById('bodyRev'),
@@ -608,10 +614,18 @@
     return info;
   }
 
-  // 排版成功：预览与打印只呈现被选中的一版
-  function showSuccess(input, result, versionName) {
+  // 排版成功：预览与打印只呈现被选中的一版；
+  // printBlock 为非空字符串时（如双语术语核对未通过），预览照常生成但禁用单张与拼版打印
+  function showSuccess(input, result, versionName, printBlock) {
     lastGood = { input: input, result: result };
     applyResult(input, result);
+    if (printBlock) {
+      setStatus(printBlock, 'err');
+      el.printBtn.disabled = true;
+      fitScale();
+      updateSheets(false, { hint: printBlock, sub: '拼版不可用：双语术语核对未通过' });
+      return;
+    }
     setStatus((versionName ? '成品：' + versionName + '　' : '') +
       successInfo(input, result), 'ok');
     el.printBtn.disabled = false;
@@ -763,6 +777,76 @@
     el.fitDelta.textContent = delta;
   }
 
+  // ---------- 双语术语核对 ----------
+  // 对照表每行「中文术语=英文译名」（解析与逐行校验见 terms.js）。
+  // 仅在「中英段落对齐」开启且中英段数一致时，对当前选定成品（原稿或修订稿）
+  // 逐段比较同一术语两侧出现次数；次数不符时列出段号、术语及两侧次数，
+  // 并禁用单张与拼版打印（对照表无效同样禁用），修正后自动恢复。
+  function termNote(text, kind) {
+    el.termSummary.textContent = text;
+    el.termSummary.className = 'term-summary' + (kind ? ' ' + kind : '');
+  }
+
+  // 刷新术语核对区；返回 null（不阻塞打印）或阻塞打印的提示文案
+  function updateTermCheck(c, entries) {
+    if (!entries.length) {
+      el.termCheck.hidden = true;
+      return null;
+    }
+    el.termCheck.hidden = false;
+    el.termTable.hidden = true;
+    el.termBody.innerHTML = '';
+
+    var input = c.input;
+    if (!input.dual) {
+      termNote('已录入 ' + entries.length +
+        ' 对术语；填写英文译文进入双栏并开启「中英段落对齐」后，逐段核对两侧次数。');
+      return null;
+    }
+    if (!input.paired) {
+      termNote('已录入 ' + entries.length +
+        ' 对术语；开启「中英段落对齐」且中英段数一致后，逐段核对两侧次数。');
+      return null;
+    }
+
+    // 对当前选定成品版本的中文正文与共用的英文译文逐段核对
+    var useRev = c.revActive && selectedVersion === 'rev';
+    var zhText = useRev ? c.revTrim : input.bodyTrim;
+    var verName = useRev ? '修订稿' : '原稿';
+    var res = window.LabelTerms.checkParagraphs(zhText, input.enTrim, entries);
+
+    if (res.zhParas !== res.enParas) {
+      // 段数不一致时排版本身已判定失败并禁印，这里只说明核对未执行
+      termNote('成品：' + verName + ' · 中文 ' + res.zhParas + ' 段、英文 ' +
+        res.enParas + ' 段，段数不一致，无法逐段核对；请调整回车分段。', 'err');
+      return null;
+    }
+
+    if (!res.mismatches.length) {
+      termNote('成品：' + verName + ' · ' + res.pairs + ' 对段落 × ' +
+        entries.length + ' 个术语，两侧出现次数全部一致。', 'ok');
+      return null;
+    }
+
+    res.mismatches.forEach(function (m) {
+      var tr = document.createElement('tr');
+      ['第 ' + m.para + ' 段', m.zh, m.en, m.zhCount + ' 次', m.enCount + ' 次']
+        .forEach(function (txt, idx) {
+          var td = document.createElement('td');
+          td.textContent = txt;
+          if (idx >= 3) td.className = 'bad';
+          tr.appendChild(td);
+        });
+      el.termBody.appendChild(tr);
+    });
+    el.termTable.hidden = false;
+    termNote('成品：' + verName + ' · ' + res.mismatches.length +
+      ' 处术语次数不符（段号、术语及两侧次数见下表）；' +
+      '修正对照表或正文/译文后自动恢复打印。', 'err');
+    return '双语术语核对未通过：' + res.mismatches.length +
+      ' 处术语次数不符（详见「双语术语核对」区），已禁用单张与拼版打印。';
+  }
+
   // ---------- 输入收集 ----------
   // 收集当前面板输入并构造排版输入（原稿与修订稿两版），主渲染与库存规格选型共用。
   // 返回 { input, revInput, revTrim, revActive, qr, qrError, qrParsed, protect }；
@@ -874,6 +958,27 @@
         (dupCount > 0 ? '（已自动忽略 ' + dupCount + ' 个重复词）' : '')
       : '未设置保护词';
 
+    // 双语术语对照表：空行忽略；重复中文项、空值或格式错误逐行提示，
+    // 存在任一错误即对照表无效——禁用单张与拼版打印，修正后恢复
+    var glossary = window.LabelTerms.parseGlossary(el.glossary.value);
+    el.glossaryHint.classList.toggle('err', glossary.errors.length > 0);
+    if (glossary.errors.length) {
+      el.glossaryHint.textContent = glossary.errors.join('\n');
+      el.termCheck.hidden = true;
+      setStatus('双语术语对照表有误：\n' + glossary.errors.join('\n'), 'err');
+      showError('双语术语对照表有误\n' + glossary.errors.join('\n'));
+      el.printBtn.disabled = true;
+      fitScale();
+      updateSheets(false, {
+        hint: '双语术语对照表有误，修正前拼版打印不可用。',
+        sub: '拼版不可用：术语对照表有误'
+      });
+      return;
+    }
+    el.glossaryHint.textContent = glossary.entries.length
+      ? '已录入 ' + glossary.entries.length + ' 对术语'
+      : '未录入术语对照';
+
     // 修订稿非空白即进入对照模式；新填写修订稿时默认以修订稿为成品
     var revActive = c.revActive;
     if (revActive && !revWasActive) selectedVersion = 'rev';
@@ -885,6 +990,10 @@
 
     // 差异对照与尺寸无关，先行渲染（尺寸非法期间对照仍保持更新）
     if (revActive) renderDiff(input.bodyTrim, c.revTrim);
+
+    // 双语术语核对：编辑正文/译文/对照表或切换成品版本后随本次渲染刷新；
+    // 仅在段落对齐开启且中英段数一致时逐段核对，次数不符则阻塞打印
+    var termBlock = updateTermCheck(c, glossary.entries);
 
     if (!(input.widthMm >= 30 && input.widthMm <= 999 &&
           input.heightMm >= 20 && input.heightMm <= 999)) {
@@ -898,7 +1007,7 @@
     if (!revActive) {
       var single = computeLayout(input);
       if (!single.ok) showFailure(input, single, null);
-      else showSuccess(input, single, null);
+      else showSuccess(input, single, null, termBlock);
       return;
     }
 
@@ -909,10 +1018,10 @@
 
     if (selectedVersion === 'rev') {
       if (!resRev.ok) showFailure(c.revInput, resRev, '修订稿');
-      else showSuccess(c.revInput, resRev, '修订稿');
+      else showSuccess(c.revInput, resRev, '修订稿', termBlock);
     } else {
       if (!resOrig.ok) showFailure(input, resOrig, '原稿');
-      else showSuccess(input, resOrig, '原稿');
+      else showSuccess(input, resOrig, '原稿', termBlock);
     }
   }
 
@@ -1266,8 +1375,9 @@
     el.sheetEmpty.hidden = false;
   }
 
-  // 拼版区刷新：仅当所选成品（原稿或修订稿）通过现有排版校验时才生成拼版
-  function updateSheets(layoutOk) {
+  // 拼版区刷新：仅当所选成品（原稿或修订稿）通过现有排版校验时才生成拼版；
+  // block 为 { hint, sub } 时用于排版以外的原因（如术语核对未通过）禁用拼版并说明
+  function updateSheets(layoutOk, block) {
     lastSheets = null;
     el.sheetPrintBtn.disabled = true;
     el.sheets.innerHTML = '';
@@ -1277,9 +1387,14 @@
     var orientName = landscape ? '横向' : '纵向';
 
     if (!layoutOk) {
-      setSheetHint('当前成品未通过排版校验，拼版打印不可用。', 'err');
-      el.sheetAreaSub.textContent = '拼版不可用：请先解决上方的排版错误';
-      showSheetEmpty('当前成品未通过排版校验，无法拼版；\n请先解决上方的排版错误。');
+      var hint = block && block.hint
+        ? block.hint
+        : '当前成品未通过排版校验，拼版打印不可用。';
+      setSheetHint(hint, 'err');
+      el.sheetAreaSub.textContent = block && block.sub
+        ? block.sub
+        : '拼版不可用：请先解决上方的排版错误';
+      showSheetEmpty(hint);
       return;
     }
 
@@ -1381,6 +1496,7 @@
     el.body.addEventListener(evt, schedule);
     el.bodyEn.addEventListener(evt, schedule);
     el.paraAlign.addEventListener(evt, schedule);
+    el.glossary.addEventListener(evt, schedule);
     el.qrLink.addEventListener(evt, schedule);
     el.protect.addEventListener(evt, schedule);
     el.widthMm.addEventListener(evt, schedule);
