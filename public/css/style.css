@@ -285,6 +285,44 @@ button:disabled { background: #aaa5; cursor: not-allowed; }
   letter-spacing: 1px;
 }
 
+/* ========== 双语术语核对 ========== */
+.term-result {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: -6px 0 14px;
+}
+.term-result-head {
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.term-result-head.ok { color: #2f6f44; }
+.term-result-errs {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--danger);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--danger);
+  margin-bottom: 6px;
+  white-space: pre-line;
+}
+.term-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.term-table th,
+.term-table td {
+  border: 1px solid var(--line);
+  padding: 3px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.term-table th { background: #f0f1f4; font-weight: 600; }
+.term-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.term-table tr.bad td.num { color: var(--danger); font-weight: 600; }
+.term-table td.en { word-break: break-word; }
+
 /* ========== 右侧预览舞台 ========== */
 .stage-wrap { overflow: auto; }
 .stage {

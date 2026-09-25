@@ -53,6 +53,13 @@
       <span class="field-hint" id="protectHint">未设置保护词</span>
     </label>
 
+    <label class="field">
+      <span class="field-label">双语术语核对表（每行「中文术语=英文译名」）</span>
+      <textarea id="terms" rows="4" placeholder="每行一条，等号连接，如：&#10;彩陶=Painted pottery&#10;仰韶文化=Yangshao Culture&#10;空行忽略；中文术语重复、任一侧为空或格式错误会逐行提示。"></textarea>
+      <span class="field-hint" id="termHint">未录入术语</span>
+    </label>
+    <div id="termResult" class="term-result" hidden></div>
+
     <div class="field-row">
       <label class="field">
         <span class="field-label">标签宽 (mm)</span>
@@ -132,6 +139,14 @@
           同一位置最长词优先、同长按录入顺序，命中词<strong>内部不可断行</strong>，
           词边界仍遵守标点避头尾规则；原稿与修订稿共用同一张表；
           保护词在 12px 仍超出行宽时显示该词与所需宽度并禁用打印，不拆词、不截断。</li>
+        <li><strong>双语术语核对</strong>：侧栏每行录入「<strong>中文术语=英文译名</strong>」（半角等号），
+          空行忽略；重复的中文术语、中文或英文为空、英文译名含字母/数字/空格/连字符/撇号以外字符等
+          格式问题会<strong>逐行指出行号</strong>。仅在<strong>开启中英段落对齐且中英非空段落数相同</strong>时，
+          对当前选定的成品版本（原稿或修订稿）的中文正文与英文译文逐段核对：
+          中文术语按<strong>最长优先、命中区间不重叠</strong>计数，英文译名<strong>忽略大小写</strong>、
+          按<strong>完整词组边界</strong>计数（不会把 "art" 计进 "artist"）；
+          逐段列出段号、中文术语、英文译名与两侧次数，次数不符即<strong>禁用单张与拼版打印</strong>，
+          修正文案或对照表后自动恢复；编辑正文或切换成品版本后实时刷新。</li>
         <li>闭标点（。，、！？：；）”’】》…—等）不会出现在行首；开标点（“‘【《〈等）不会留在行尾。</li>
         <li>在所有放得下的排法中，最小化<strong>非末行空白宽度的平方和</strong>，使各行尽量均匀填满。</li>
         <li>正文字号在 <strong>12–24px</strong> 中取能同时容纳宽与高的<strong>最大整数</strong>；任何字号都放不下时报错，不做截断或缩放。</li>
@@ -195,6 +210,7 @@
 
 <script src="/js/diff.js"></script>
 <script src="/js/layout.js"></script>
+<script src="/js/terms.js"></script>
 <script src="/js/qrcode.js"></script>
 <script src="/js/app.js"></script>
 </body>

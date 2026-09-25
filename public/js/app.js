@@ -36,6 +36,9 @@
     revCount: document.getElementById('revCount'),
     protect: document.getElementById('protect'),
     protectHint: document.getElementById('protectHint'),
+    terms: document.getElementById('terms'),
+    termHint: document.getElementById('termHint'),
+    termResult: document.getElementById('termResult'),
     widthMm: document.getElementById('widthMm'),
     heightMm: document.getElementById('heightMm'),
     stockSizes: document.getElementById('stockSizes'),
@@ -162,6 +165,16 @@
       return true;
     }
     return ch >= 0x2000 && ch <= 0x200a;
+  }
+
+  // ---------- 双语术语核对（解析/计数逻辑见无 DOM 依赖的 terms.js） ----------
+  var LabelTerm = window.LabelTerm;
+  function parseTermTable(raw) { return LabelTerm.parseTermTable(raw); }
+  function splitParagraphs(text) {
+    return LabelTerm.splitParagraphs(window.LabelLayout, text);
+  }
+  function checkTerms(zhText, enText, entries) {
+    return LabelTerm.checkTerms(window.LabelLayout, zhText, enText, entries);
   }
 
   // ---------- 展品介绍链接校验 ----------
@@ -828,9 +841,112 @@
     };
   }
 
+  // ---------- 双语术语核对：侧栏结果面板 ----------
+  // parsed：parseTermTable 结果；inactiveReason：未进入核对的原因（null 表示已逐段核对）；
+  // check：checkTerms 结果（inactiveReason 为 null 时给出）。
+  function renderTermPanel(parsed, inactiveReason, check, versionName) {
+    el.termResult.innerHTML = '';
+
+    // 逐行错误（表无效）：无论是否进入核对都先展示
+    if (parsed.errors.length) {
+      var errs = document.createElement('div');
+      errs.className = 'term-result-errs';
+      errs.textContent = '术语核对表有 ' + parsed.errors.length +
+        ' 行格式有误，修正前不进行核对且不能打印：\n' +
+        parsed.errors.join('\n');
+      el.termResult.appendChild(errs);
+    }
+
+    if (inactiveReason) {
+      var idle = document.createElement('div');
+      idle.className = 'term-result-head';
+      idle.textContent = inactiveReason;
+      el.termResult.appendChild(idle);
+    } else if (check) {
+      var head = document.createElement('div');
+      if (check.rows.length) {
+        head.className = 'term-result-head';
+        head.textContent = '核对完成（' + (versionName || '当前成品') +
+          '，共 ' + check.paraCount + ' 段）：以下条目在同一段落内中英出现次数不一致，' +
+          '单张与拼版打印已禁用。';
+      } else {
+        head.className = 'term-result-head ok';
+        head.textContent = '核对完成（' + (versionName || '当前成品') + '，共 ' +
+          check.paraCount + ' 段）：' + parsed.entries.length +
+          ' 条术语在每个段落内中英出现次数均一致。';
+      }
+      el.termResult.appendChild(head);
+
+      if (check.rows.length) {
+        var table = document.createElement('table');
+        table.className = 'term-table';
+        var thead = document.createElement('thead');
+        var hr = document.createElement('tr');
+        ['段号', '中文术语', '英文译名', '中文次数', '英文次数'].forEach(function (txt) {
+          var th = document.createElement('th');
+          th.textContent = txt;
+          hr.appendChild(th);
+        });
+        thead.appendChild(hr);
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        check.rows.forEach(function (r) {
+          var tr = document.createElement('tr');
+          tr.className = 'bad';
+          var tdPara = document.createElement('td');
+          tdPara.className = 'num';
+          tdPara.textContent = '第 ' + r.para + ' 段';
+          var tdZh = document.createElement('td');
+          tdZh.textContent = r.zh;
+          var tdEn = document.createElement('td');
+          tdEn.className = 'en';
+          tdEn.textContent = r.en;
+          var tdZ = document.createElement('td');
+          tdZ.className = 'num';
+          tdZ.textContent = r.zhCount;
+          var tdE = document.createElement('td');
+          tdE.className = 'num';
+          tdE.textContent = r.enCount;
+          tr.appendChild(tdPara);
+          tr.appendChild(tdZh);
+          tr.appendChild(tdEn);
+          tr.appendChild(tdZ);
+          tr.appendChild(tdE);
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        el.termResult.appendChild(table);
+      }
+    }
+
+    var hasContent = parsed.entries.length > 0 || parsed.errors.length > 0;
+    el.termResult.hidden = !hasContent;
+
+    el.termHint.classList.toggle('err', parsed.errors.length > 0);
+    if (parsed.errors.length) {
+      el.termHint.textContent = '术语表有 ' + parsed.errors.length + ' 行格式有误，已禁用打印';
+    } else if (parsed.entries.length) {
+      el.termHint.textContent = '已录入 ' + parsed.entries.length + ' 条术语';
+    } else {
+      el.termHint.textContent = '未录入术语';
+    }
+  }
+
   function render() {
     var c = collectInputs();
     var input = c.input;
+
+    // 双语术语核对表：每次渲染都解析（含逐行错误提示），与其余阻塞性检查无关
+    var termParsed = parseTermTable(el.terms.value);
+    function termIdleReason(cfg) {
+      if (!cfg.dual) {
+        return '英文译文为空（单栏）：术语核对仅在开启「中英段落对齐」且中英段数一致时进行。';
+      }
+      if (!cfg.paired) {
+        return '未开启「中英段落对齐」：开启且中英段数一致后自动逐段核对。';
+      }
+      return null;
+    }
 
     // 段落对齐开关仅在中英双栏时可用；单栏时恢复现有独立布局
     el.paraAlign.disabled = !input.dual;
@@ -847,6 +963,7 @@
       el.qrHint.textContent = c.qrError;
       setStatus(c.qrError, 'err');
       showError('展品介绍链接有误\n' + c.qrError);
+      renderTermPanel(termParsed, termIdleReason(input), null, null);
       el.printBtn.disabled = true;
       fitScale();
       updateSheets(false);
@@ -863,6 +980,7 @@
       el.protectHint.textContent = c.protect.error;
       setStatus(c.protect.error, 'err');
       showError('专名保护表有误\n' + c.protect.error);
+      renderTermPanel(termParsed, termIdleReason(input), null, null);
       el.printBtn.disabled = true;
       fitScale();
       updateSheets(false);
@@ -890,15 +1008,77 @@
           input.heightMm >= 20 && input.heightMm <= 999)) {
       setStatus('请输入有效的标签尺寸：宽 30–999mm，高 20–999mm。', 'err');
       showError('标签尺寸无效\n（宽 30–999mm，高 20–999mm）');
+      renderTermPanel(termParsed, termIdleReason(input), null, null);
       el.printBtn.disabled = true;
       updateSheets(false);
       return;
     }
 
+    // ---------- 双语术语核对 ----------
+    // 仅在段落对齐开启且中英非空段落数一致时，对当前选定成品版本（原稿/修订稿）逐段核对；
+    // 段数不等（排版也会以 mismatch 失败）或表内无有效条目时不在此核算。
+    var termVersionName = revActive
+      ? (selectedVersion === 'rev' ? '修订稿' : '原稿') : null;
+    var termActive = false;
+    var termCheck = null;
+    var idleReason = termIdleReason(input);
+    if (!idleReason && !termParsed.entries.length) {
+      // 段数虽一致，但没有有效术语（空表或条目均非法）：空表提示录入，
+      // 有逐行错误时错误框已说明，不再给「已开启但未核对」提示。
+      if (!termParsed.errors.length) {
+        idleReason = '已开启中英段落对齐：录入「中文术语=英文译名」后自动逐段核对。';
+      }
+    }
+    if (!idleReason) {
+      var termBase = (revActive && selectedVersion === 'rev') ? c.revInput : input;
+      var zhParasForTerm = splitParagraphs(termBase.bodyTrim);
+      var enParasForTerm = splitParagraphs(termBase.enTrim);
+      if (zhParasForTerm.length === enParasForTerm.length &&
+          zhParasForTerm.length > 0 &&
+          termParsed.entries.length > 0 && !termParsed.errors.length) {
+        termActive = true;
+        termCheck = checkTerms(termBase.bodyTrim, termBase.enTrim, termParsed.entries);
+      } else if (zhParasForTerm.length !== enParasForTerm.length) {
+        idleReason = '中英段落对齐已开启，但两侧非空段落数不一致（中文 ' +
+          zhParasForTerm.length + ' 段、英文 ' + enParasForTerm.length +
+          ' 段）：段落数一致后才逐段核对。';
+      }
+    }
+    renderTermPanel(termParsed, idleReason, termCheck, termVersionName);
+
+    // 排版成功后：对照表存在逐行错误或逐段核对有次数不符时，禁用单张与拼版打印；
+    // 修正文案或对照表（render 会重新执行）后自动恢复。
+    function applyTermGate() {
+      if (termParsed.errors.length) {
+        el.printBtn.disabled = true;
+        updateSheets(false, '术语核对表存在格式错误，拼版打印不可用。');
+        setStatus('双语术语核对表有 ' + termParsed.errors.length +
+          ' 行格式有误，单张与拼版打印已禁用（见侧栏逐行提示）。', 'err');
+        return true;
+      }
+      if (termActive && termCheck && termCheck.rows.length) {
+        el.printBtn.disabled = true;
+        updateSheets(false, '术语核对存在中英次数不符，拼版打印不可用。');
+        var preview = termCheck.rows.slice(0, 4).map(function (r) {
+          return '第 ' + r.para + ' 段「' + r.zh + '」中文 ' + r.zhCount +
+            ' 次 / 英文 ' + r.enCount + ' 次';
+        }).join('；');
+        setStatus('术语核对：' + termCheck.rows.length + ' 项中英出现次数不一致（' +
+          preview + (termCheck.rows.length > 4 ? ' 等' : '') +
+          '），单张与拼版打印已禁用。', 'err');
+        return true;
+      }
+      return false;
+    }
+
     if (!revActive) {
       var single = computeLayout(input);
-      if (!single.ok) showFailure(input, single, null);
-      else showSuccess(input, single, null);
+      if (!single.ok) {
+        showFailure(input, single, null);
+      } else {
+        showSuccess(input, single, null);
+        applyTermGate();
+      }
       return;
     }
 
@@ -909,10 +1089,16 @@
 
     if (selectedVersion === 'rev') {
       if (!resRev.ok) showFailure(c.revInput, resRev, '修订稿');
-      else showSuccess(c.revInput, resRev, '修订稿');
+      else {
+        showSuccess(c.revInput, resRev, '修订稿');
+        applyTermGate();
+      }
     } else {
       if (!resOrig.ok) showFailure(input, resOrig, '原稿');
-      else showSuccess(input, resOrig, '原稿');
+      else {
+        showSuccess(input, resOrig, '原稿');
+        applyTermGate();
+      }
     }
   }
 
@@ -1025,6 +1211,15 @@
     }
     if (c.protect.error) {
       showStockError('专名保护表有误，无法选型：\n' + c.protect.error);
+      return;
+    }
+
+    // 双语术语核对表存在逐行格式错误时不选型（次数不符不属于选型阻塞，
+    // 打印按钮仍由主渲染流程按当前所选版本禁用）
+    var termParsedNow = parseTermTable(el.terms.value);
+    if (termParsedNow.errors.length) {
+      showStockError('双语术语核对表有误，无法选型：\n' +
+        termParsedNow.errors.join('\n'));
       return;
     }
 
@@ -1266,8 +1461,9 @@
     el.sheetEmpty.hidden = false;
   }
 
-  // 拼版区刷新：仅当所选成品（原稿或修订稿）通过现有排版校验时才生成拼版
-  function updateSheets(layoutOk) {
+  // 拼版区刷新：仅当所选成品（原稿或修订稿）通过现有排版校验时才生成拼版；
+  // blockMsg 非空时以术语核对等附加校验的原因说明禁用拼版。
+  function updateSheets(layoutOk, blockMsg) {
     lastSheets = null;
     el.sheetPrintBtn.disabled = true;
     el.sheets.innerHTML = '';
@@ -1277,9 +1473,12 @@
     var orientName = landscape ? '横向' : '纵向';
 
     if (!layoutOk) {
-      setSheetHint('当前成品未通过排版校验，拼版打印不可用。', 'err');
-      el.sheetAreaSub.textContent = '拼版不可用：请先解决上方的排版错误';
-      showSheetEmpty('当前成品未通过排版校验，无法拼版；\n请先解决上方的排版错误。');
+      setSheetHint(blockMsg || '当前成品未通过排版校验，拼版打印不可用。', 'err');
+      el.sheetAreaSub.textContent = blockMsg
+        ? '拼版不可用：' + blockMsg.replace('，拼版打印不可用。', '')
+        : '拼版不可用：请先解决上方的排版错误';
+      showSheetEmpty(blockMsg ||
+        '当前成品未通过排版校验，无法拼版；\n请先解决上方的排版错误。');
       return;
     }
 
@@ -1383,6 +1582,7 @@
     el.paraAlign.addEventListener(evt, schedule);
     el.qrLink.addEventListener(evt, schedule);
     el.protect.addEventListener(evt, schedule);
+    el.terms.addEventListener(evt, schedule);
     el.widthMm.addEventListener(evt, schedule);
     el.heightMm.addEventListener(evt, schedule);
     el.copies.addEventListener(evt, schedule);
